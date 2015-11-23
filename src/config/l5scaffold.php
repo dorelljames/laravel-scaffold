@@ -82,11 +82,12 @@ return array(
         'seeds' => 'database/seeds',
         'models' => 'app/Models',
         'repositories' => 'app/Repositories',
-        'repositoryInterfaces' => 'app/Contracts',
+        'repositoryInterfaces' => 'app/Contracts/Repositories',
         'tests' => 'tests',
         'views' => 'resources/views',
         'routes' => 'app/Http',
-        'layout' => 'resources/views/layouts/default.blade.php'
+        'layout' => 'resources/views/layouts/default.blade.php',
+        'angular' => 'public/angular'
 
     ),
 

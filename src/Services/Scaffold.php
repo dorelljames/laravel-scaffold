@@ -389,6 +389,8 @@ class Scaffold implements ScaffoldInterface
             if(!$this->namespaceGlobal)
                 $this->namespace = "";
 
+            $this->namespace = "App\\Models";
+
             $this->model = new Model($this->command, $oldModelFile, $this->namespace);
 
             $this->model->generateModel($modelAndProperties);
@@ -469,6 +471,7 @@ class Scaffold implements ScaffoldInterface
                     $this->createRepositoryInterface();
                     $this->putRepositoryFolderInStartFiles();
                 }
+
 
                 $this->createController();
 
@@ -574,7 +577,7 @@ class Scaffold implements ScaffoldInterface
             if(strpos($fileContents, $relation->getName()) !== false && !$newModel)
                 continue;
 
-            $functionContent = "\t\treturn \$this->" . $relation->getType() . "('" . $relatedModel->nameWithNamespace() . "');\n";
+            $functionContent = "\t\treturn \$this->" . $relation->getType() . "(\\" . $relatedModel->nameWithNamespace() . "::class);\n";
             $fileContents .= $this->fileCreator->createFunction($relation->getName(), $functionContent);
 
             $relatedModelFile = $this->configSettings['pathTo']['models'] . $relatedModel->upper() . '.php';
@@ -681,8 +684,9 @@ class Scaffold implements ScaffoldInterface
      */
     private function copyTemplateFiles()
     {
-        if(!\File::isDirectory($this->configSettings['pathTo']['templates']))
+        if(!\File::isDirectory($this->configSettings['pathTo']['templates'])) {
             $this->fileCreator->copyDirectory("vendor/binondord/laravel-scaffold/src/templates/", $this->configSettings['pathTo']['templates']);
+        }
     }
 
     /**
@@ -924,7 +928,7 @@ class Scaffold implements ScaffoldInterface
     {
         $fileName = $this->configSettings['pathTo']['controllers'] . $this->nameOf("controller"). ".php";
 
-        $this->makeFileFromTemplate($fileName, $this->templatePathWithControllerType."controller.txt");
+        $this->makeFileFromTemplate($fileName, $this->templatePathWithControllerType."controller.php");
     }
 
     /**
@@ -938,7 +942,7 @@ class Scaffold implements ScaffoldInterface
 
         $fileName = $this->configSettings['pathTo']['tests']."controller/" . $this->nameOf("test") .".php";
 
-        $this->makeFileFromTemplate($fileName, $this->templatePathWithControllerType."test.txt");
+        $this->makeFileFromTemplate($fileName, $this->templatePathWithControllerType."test.php");
     }
 
     /**
@@ -952,10 +956,12 @@ class Scaffold implements ScaffoldInterface
 
         $namespace = $this->namespace ? $this->namespace . "\\" : "";
 
+        $contractsNamespace = "App\\Contracts\\Repositories";
+
         $fileContents = "";
 
         if($this->configSettings['useRepository'])
-            $fileContents = "\nApp::bind('" . $namespace . $this->nameOf("repositoryInterface")."','" . $namespace . $this->nameOf("repository") ."');\n";
+            $fileContents = "\nApp::bind('" . $contractsNamespace . $this->nameOf("repositoryInterface")."','" . $namespace . $this->nameOf("repository") ."');\n";
 
         $routeType = $this->isResource ? "resource" : "controller";
 
@@ -983,11 +989,11 @@ class Scaffold implements ScaffoldInterface
 
             try
             {
-                $this->makeFileFromTemplate($fileName, $pathToViews."$view.txt");
+                $this->makeFileFromTemplate($fileName, $pathToViews."$view.blade.php");
             }
             catch(FileNotFoundException $e)
             {
-                $this->command->error("Template file ".$pathToViews . $view.".txt does not exist! You need to create it to generate that file!");
+                $this->command->error("Template file ".$pathToViews . $view.".blade.txt does not exist! You need to create it to generate that file!");
             }
         }
     }
