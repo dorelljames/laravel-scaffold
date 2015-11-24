@@ -1,6 +1,7 @@
 <?php namespace Binondord\LaravelScaffold\Services;
 
 use Faker\Factory;
+
 use Illuminate\Console\Command;
 use Illuminate\Filesystem\FileNotFoundException;
 
@@ -30,6 +31,11 @@ class Scaffold implements ScaffoldInterface
      * @var array
      */
     private $laravelClasses = array();
+
+    /**
+     * @var array (md5hash => filename)
+     */
+    private $createdFilesCache = array();
 
     /**
      * @var Model
@@ -122,7 +128,8 @@ class Scaffold implements ScaffoldInterface
         'baseRepository',
         'modelDefinitionsFile',
         'useRepository',
-        'useBaseRepository'
+        'useBaseRepository',
+        'transfers'
     );
 
     public function __construct(ScaffoldCommandInterface $command)
@@ -444,6 +451,66 @@ class Scaffold implements ScaffoldInterface
         return $modelDefinitionsFile;
     }
 
+    private function getCreatedFilesCache()
+    {
+        $cacheModel = $this->getModelCacheFile();
+        return str_replace('models','created-files',$cacheModel);
+    }
+
+    private function removeCreatedFiles()
+    {
+        $remainingFiles = array();
+
+        if(\File::exists($this->getCreatedFilesCache()))
+        {
+            $createdFiles = \File::get($this->getCreatedFilesCache());
+            $createdFilesArray = unserialize($createdFiles);
+            foreach($createdFilesArray as $key=>$createdFile)
+            {
+                if(\File::exists($createdFile))
+                {
+                    $content = \File::get($createdFile);
+                    if(md5($content) == $key)
+                    {
+                        \File::delete($createdFile);
+                    }else{
+                        $remainingFiles[$key] = $createdFile;
+                    }
+                }
+            }
+
+            if(!empty($remainingFiles))
+            {
+                $this->info('List of modified files preserved. (You may want to retain or remove them manually.)');
+                $i=0;
+                foreach($remainingFiles as $remainingFile)
+                {
+                    $this->info(++$i.'.) '.$remainingFile);
+                }
+            }
+
+            return true;
+        }else{
+            $this->info('Nothing to remove.');
+
+            return false;
+        }
+    }
+
+    public function reset()
+    {
+        if($this->removeCreatedFiles())
+        {
+            $this->info('Finishing...');
+
+            $this->command->call('clear-compiled');
+
+            $this->command->call('optimize');
+        };
+
+        $this->info('Done!');
+    }
+
     /**
      *  Creates all of the files
      */
@@ -482,6 +549,8 @@ class Scaffold implements ScaffoldInterface
                 $this->createTests();
 
                 $this->createSeeds();
+
+                $this->fileCreator->createFile($this->getCreatedFilesCache(), serialize($this->createdFilesCache));
             }
         }
     }
@@ -519,7 +588,7 @@ class Scaffold implements ScaffoldInterface
 
         $fileContents = $this->addRelationships($fileContents);
 
-        $template = $this->configSettings['useRepository'] ? "model.txt" : "model-no-repo.txt";
+        $template = $this->configSettings['useRepository'] ? "model.php" : "model-no-repo.php";
 
         $this->makeFileFromTemplate($fileName, $this->configSettings['pathTo']['templates'].$template, $fileContents);
 
@@ -872,11 +941,11 @@ class Scaffold implements ScaffoldInterface
         if($useBaseRepository)
         {
             if(!file_exists($baseRepository))
-                $this->makeFileFromTemplate($baseRepository, $this->configSettings['pathTo']['templates']."base-repository-interface.txt");
+                $this->makeFileFromTemplate($baseRepository, $this->configSettings['pathTo']['templates']."base-repository-interface.php");
             $repoTemplate .= "-with-base";
         }
 
-        $repoTemplate .= ".txt";
+        $repoTemplate .= ".php";
 
         $fileName = $this->configSettings['pathTo']['repositoryInterfaces'] . $this->nameOf("repositoryInterface") . ".php";
 
@@ -894,7 +963,7 @@ class Scaffold implements ScaffoldInterface
 
         $fileName = $this->configSettings['pathTo']['repositories'] . $this->nameOf("repository") . '.php';
 
-        $this->makeFileFromTemplate($fileName, $this->configSettings['pathTo']['templates']."eloquent-repository.txt");
+        $this->makeFileFromTemplate($fileName, $this->configSettings['pathTo']['templates']."eloquent-repository.php");
     }
 
     /**
@@ -987,13 +1056,32 @@ class Scaffold implements ScaffoldInterface
         {
             $fileName = $dir . "$view.blade.php";
 
+            $success = false;
+
             try
             {
                 $this->makeFileFromTemplate($fileName, $pathToViews."$view.blade.php");
+                $success = true;
             }
             catch(FileNotFoundException $e)
             {
-                $this->command->error("Template file ".$pathToViews . $view.".blade.txt does not exist! You need to create it to generate that file!");
+                $this->command->error("Template file ".$pathToViews . $view.".blade.php does not exist! You need to create it to generate that file!");
+            }
+
+            if($success)
+            {
+                $transferMap = $this->configSettings['transfers']['views'];
+                if(in_array($view, array_keys($transferMap)))
+                {
+                    $this->fileCreator->createDirectory($transferMap[$view]);
+                    $ngCtrlscript = $transferMap[$view].'/'.$this->nameOf('viewFolder').'Ctrl.js';
+                    $this->fileCreator->copyFile($fileName, $ngCtrlscript);
+                    $key = array_search($fileName, $this->createdFilesCache);
+                    if($key !== false && array_key_exists($key, $this->createdFilesCache)) {
+                        \File::delete($fileName);
+                        $this->createdFilesCache[$key] = $ngCtrlscript;
+                    }
+                }
             }
         }
     }
@@ -1031,6 +1119,7 @@ class Scaffold implements ScaffoldInterface
         if(!$this->configSettings['useRepository'])
             $fileContents = str_replace($this->nameOf("repositoryInterface"), $this->nameOf("modelName"), $fileContents);
 
+        $this->createdFilesCache[md5($fileContents)] = $fileName;
         $this->fileCreator->createFile($fileName, $fileContents);
     }
 
